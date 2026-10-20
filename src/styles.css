@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens — identical to the design mock.
+ * Neutral zinc base + three muted accents: accent (blue-indigo), destructive (brick red),
+ * warning (amber) and success (sage).
+ */
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #3f3f46;
+  --card: #ffffff;
+  --card-foreground: #3f3f46;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #52525b;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --primary: #52525b;
+  --primary-hover: #3f3f46;
+  --primary-foreground: #fafafa;
+  --accent: #5b6f99;
+  --accent-foreground: #fafafa;
+  --destructive: #b6524e;
+  --destructive-foreground: #fdf4f3;
+  --warning: #b9803f;
+  --success: #4a8a66;
+  --ring: var(--accent);
+  --track: rgb(82 82 91 / 0.14);
+  --overlay: rgb(24 24 27 / 0.28);
+  --shadow-popover: 0 10px 30px -10px rgb(0 0 0 / 0.18), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+  --radius: 0.625rem;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html.dark {
+  color-scheme: dark;
+  --background: #18181b;
+  --foreground: #e4e4e7;
+  --card: #1c1c1f;
+  --card-foreground: #e4e4e7;
+  --muted: #27272a;
+  --muted-foreground: #8b8b94;
+  --secondary: #27272a;
+  --secondary-foreground: #a1a1aa;
+  --border: #2e2e33;
+  --input: #3a3a40;
+  --primary: #d4d4d8;
+  --primary-hover: #e4e4e7;
+  --primary-foreground: #18181b;
+  --accent: #8fa3cf;
+  --accent-foreground: #16202e;
+  --destructive: #d98d89;
+  --destructive-foreground: #2a1210;
+  --warning: #d7a868;
+  --success: #7dc79b;
+  --overlay: rgb(0 0 0 / 0.45);
+  --shadow-popover: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--background);
+  --color-popover-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-ring: var(--ring);
+  --color-track: var(--track);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: transparent;
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+  input {
+    user-select: text;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in oklab, var(--primary) 22%, transparent);
+  border-top-color: var(--primary);
+  animation: spin 0.9s linear infinite;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* thin scrollbars for the popover list and settings content */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--track);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

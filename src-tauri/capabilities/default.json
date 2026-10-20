@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the FlipOn popover and settings windows",
+  "windows": ["popover", "settings"],
+  "permissions": ["core:default"]
+}

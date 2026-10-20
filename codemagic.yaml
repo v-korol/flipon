@@ -1,0 +1,50 @@
+# Builds FlipOn for macOS on Codemagic's Apple Silicon machines, since there is no Mac to build on.
+# Codemagic reads this file from the repository (GitLab works as a source) and runs it whenever a
+# release tag (v0.2.0, …) is pushed. The Windows release is cut first with `pnpm release`; this
+# workflow then adds the macOS files to the same version on api.korol.app.
+#
+# One-time setup in the Codemagic web UI (details in DEVELOPMENT.md):
+#   1. Add the GitLab repository as an application.
+#   2. Create an environment variable group named "flipon_release" with these secure variables:
+#        FLIPON_ADMIN_SECRET              the backend's ADMIN_SECRET
+#        TAURI_SIGNING_PRIVATE_KEY        the contents of ~/.tauri/flipon.key
+#        TAURI_SIGNING_PRIVATE_KEY_PASSWORD   its password (leave empty if it has none)
+
+workflows:
+  flipon-macos:
+    name: FlipOn macOS (universal)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      groups:
+        - flipon_release
+      node: 22
+      xcode: latest
+      vars:
+        FLIPON_RELEASE_API: https://api.korol.app
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+    scripts:
+      - name: Install Rust with both Mac targets
+        script: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> $CM_ENV
+      - name: Install pnpm and dependencies
+        script: |
+          # Codemagic ships a yarn package.json in the home folder, which makes corepack refuse pnpm.
+          corepack disable || true
+          npm install -g pnpm@9.15.0
+          pnpm --version
+          pnpm install --frozen-lockfile
+      - name: Build the universal app and publish it
+        script: |
+          node scripts/release-macos.mjs
+    artifacts:
+      - src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+      - src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz

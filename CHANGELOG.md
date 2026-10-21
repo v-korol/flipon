@@ -3,6 +3,12 @@
 Release notes for FlipOn. `pnpm release` reads the section for the version it publishes and
 shows it to users in the update notice.
 
+## Unreleased
+
+- macOS: FlipOn now needs macOS 13 Ventura or later (its interface needs a newer Safari engine
+  than macOS 11 and 12 ship with). Logins are double-checked after they are saved to the Keychain,
+  and `claude` is found even when it was installed with nvm, fnm, asdf, mise or pnpm.
+
 ## 0.2.1
 
 - Automatic updates are now on by default, so new versions install by themselves when FlipOn is

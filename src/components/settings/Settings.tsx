@@ -388,7 +388,7 @@ function TrayTab({ s, set, active }: { s: Settings; set: (p: Partial<Settings>) 
         <div>
           <p className="mb-2.5 text-xs leading-normal text-muted-foreground">
             Build your own: toggle the blocks you want and use the arrows to reorder them. The preview shows how it'll look in the tray —
-            on Windows the tray icon is square, so the blocks are stacked to fit.
+            the tray icon is square, so the blocks are stacked to fit.
           </p>
           <ModuleStrip
             modules={s.trayModules}

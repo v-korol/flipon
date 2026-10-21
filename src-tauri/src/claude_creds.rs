@@ -142,14 +142,38 @@ fn keychain_add_command(account: &str, service: &str, value: &[u8]) -> String {
     format!("add-generic-password -U -a \"{account}\" -s \"{service}\" -X \"{hex}\"\n")
 }
 
+/// What `security find-generic-password -w` printed, as text. It prints the value itself when it is
+/// readable text and hex when it is not, so a hex dump that decodes to JSON is decoded.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn decode_keychain_value(printed: &str) -> String {
+    let looks_hex = !printed.is_empty() && printed.len().is_multiple_of(2) && printed.bytes().all(|b| b.is_ascii_hexdigit());
+    if looks_hex && serde_json::from_str::<Value>(printed).is_err() {
+        let bytes: Option<Vec<u8>> = (0..printed.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&printed[i..i + 2], 16).ok())
+            .collect();
+        if let Some(text) = bytes.and_then(|b| String::from_utf8(b).ok()).filter(|t| serde_json::from_str::<Value>(t).is_ok()) {
+            return text;
+        }
+    }
+    printed.to_string()
+}
+
 #[cfg(target_os = "macos")]
 mod keychain {
     use super::*;
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::io::{Read, Write};
+    use std::process::{Command, Output, Stdio};
+    use std::time::{Duration, Instant};
 
     /// `security` exits with 44 when the item does not exist.
     const NOT_FOUND: i32 = 44;
+    /// If macOS asks the user to allow Keychain access, `security` waits for the answer. Give up after
+    /// this long instead of blocking FlipOn's background loop forever.
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    /// `security -i` reads one command per line from a fixed-size buffer; a longer line would be cut.
+    /// Above this the value goes as an argument instead (briefly visible to `ps`, as with the CLI).
+    const MAX_INTERACTIVE_LINE: usize = 4000;
 
     pub fn service() -> String {
         let env = |k: &str| std::env::var(k).ok();
@@ -161,19 +185,65 @@ mod keychain {
         )
     }
 
-    fn find(service: &str, account: Option<&str>) -> Result<Option<String>, String> {
-        let mut cmd = Command::new("/usr/bin/security");
-        cmd.arg("find-generic-password");
-        if let Some(a) = account {
-            cmd.args(["-a", a]);
-        }
-        let out = cmd
-            .args(["-w", "-s", service])
-            .stdin(Stdio::null())
-            .output()
+    /// Runs `security`, feeding `input` on stdin, and kills it after `TIMEOUT`.
+    fn run(args: &[&str], input: Option<&[u8]>) -> Result<Output, String> {
+        let mut child = Command::new("/usr/bin/security")
+            .args(args)
+            .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|e| format!("Could not run the macOS security tool: {e}"))?;
+        if let (Some(bytes), Some(mut stdin)) = (input, child.stdin.take()) {
+            stdin
+                .write_all(bytes)
+                .map_err(|e| format!("Could not talk to the macOS security tool: {e}"))?;
+            // stdin is dropped here, so `security -i` sees the end of its input
+        }
+        // read the pipes on threads so a large output cannot stall the child while we wait
+        let out_pipe = child.stdout.take();
+        let err_pipe = child.stderr.take();
+        let drain = |pipe: Option<Box<dyn Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                if let Some(mut p) = pipe {
+                    let _ = p.read_to_end(&mut buf);
+                }
+                buf
+            })
+        };
+        let out_reader = drain(out_pipe.map(|p| Box::new(p) as Box<dyn Read + Send>));
+        let err_reader = drain(err_pipe.map(|p| Box::new(p) as Box<dyn Read + Send>));
+        let started = Instant::now();
+        let status = loop {
+            match child.try_wait().map_err(|e| e.to_string())? {
+                Some(status) => break status,
+                None if started.elapsed() > TIMEOUT => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("macOS is waiting for permission to use the Claude Code login in the Keychain. \
+                                Allow it (\"Always Allow\") and try again."
+                        .into());
+                }
+                None => std::thread::sleep(Duration::from_millis(25)),
+            }
+        };
+        Ok(Output {
+            status,
+            stdout: out_reader.join().unwrap_or_default(),
+            stderr: err_reader.join().unwrap_or_default(),
+        })
+    }
+
+    fn find(service: &str, account: Option<&str>) -> Result<Option<String>, String> {
+        let mut args = vec!["find-generic-password"];
+        if let Some(a) = account {
+            args.extend(["-a", a]);
+        }
+        args.extend(["-w", "-s", service]);
+        let out = run(&args, None)?;
         match out.status.code() {
-            Some(0) => Ok(Some(String::from_utf8_lossy(&out.stdout).trim().to_string())),
+            Some(0) => Ok(Some(decode_keychain_value(String::from_utf8_lossy(&out.stdout).trim()))),
             Some(NOT_FOUND) => Ok(None),
             code => Err(format!(
                 "Could not read the Claude Code login from the Keychain (security exited {}): {}",
@@ -193,30 +263,30 @@ mod keychain {
         }
     }
 
+    /// Stores the value, then reads it back: `security -i` can report success for a command it did
+    /// not run, and a login that was not really saved must not look like a successful switch.
     pub fn write(value: &[u8]) -> Result<(), String> {
         let service = service();
         let line = keychain_add_command(KEYCHAIN_ACCOUNT, &service, value);
-        let mut child = Command::new("/usr/bin/security")
-            .arg("-i")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Could not run the macOS security tool: {e}"))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(line.as_bytes())
-                .map_err(|e| format!("Could not talk to the macOS security tool: {e}"))?;
-        }
-        drop(child.stdin.take());
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if out.status.success() {
-            Ok(())
+        let out = if line.len() <= MAX_INTERACTIVE_LINE {
+            run(&["-i"], Some(line.as_bytes()))?
         } else {
-            Err(format!(
+            let hex: String = value.iter().map(|b| format!("{b:02x}")).collect();
+            run(&["add-generic-password", "-U", "-a", KEYCHAIN_ACCOUNT, "-s", &service, "-X", &hex], None)?
+        };
+        if !out.status.success() {
+            return Err(format!(
                 "Could not save the Claude Code login to the Keychain: {}",
                 String::from_utf8_lossy(&out.stderr).trim()
-            ))
+            ));
+        }
+        let wanted: Option<Value> = serde_json::from_slice(value).ok();
+        let stored = find(&service, Some(KEYCHAIN_ACCOUNT))?;
+        let stored: Option<Value> = stored.as_deref().and_then(|s| serde_json::from_str(s).ok());
+        if wanted.is_some() && stored == wanted {
+            Ok(())
+        } else {
+            Err("The Claude Code login was not saved to the Keychain (it reads back different). Try again.".into())
         }
     }
 }
@@ -349,6 +419,16 @@ mod keychain_tests {
         // CLAUDE_SECURESTORAGE_CONFIG_DIR wins; empty means default
         assert_eq!(keychain_service(Some(""), Some(dir), dir), "Claude Code-credentials");
         assert!(keychain_service(Some("/x"), None, "/y").starts_with("Claude Code-credentials-"));
+    }
+
+    #[test]
+    fn keychain_output_is_decoded_when_printed_as_hex() {
+        let json = r#"{"claudeAiOauth":{"accessToken":"t"}}"#;
+        let hex: String = json.bytes().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(decode_keychain_value(json), json);
+        assert_eq!(decode_keychain_value(&hex), json);
+        // a value that happens to be hex but is not JSON stays as it is
+        assert_eq!(decode_keychain_value("deadbeef"), "deadbeef");
     }
 
     #[test]

@@ -49,6 +49,8 @@ pub fn create_popover(app: &AppHandle) -> tauri::Result<()> {
         .shadow(false)
         .resizable(false)
         .always_on_top(true)
+        // macOS: open on the current Space, also over a full-screen app (no effect on Windows)
+        .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         .visible(false)
         .focused(false)

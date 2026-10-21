@@ -40,16 +40,70 @@ fn child_path(claude: &Path) -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap_or_default()
 }
 
+/// PATH of the user's login shell, read once. An app started from Finder or at login only gets
+/// /usr/bin:/bin:…, while `claude` (and the `node` it runs on) is often added by ~/.zshrc via nvm,
+/// fnm, asdf, mise… Asking the shell is the only way to see those. Empty if the shell is slow or odd.
+#[cfg(target_os = "macos")]
+fn login_shell_dirs() -> &'static [PathBuf] {
+    static DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+    DIRS.get_or_init(|| {
+        let shell = std::env::var("SHELL").ok().filter(|s| s.starts_with('/')).unwrap_or_else(|| "/bin/zsh".into());
+        let mut child = match std::process::Command::new(&shell)
+            .args(["-ilc", "printf '__FLIPON_PATH__%s__FLIPON_PATH__' \"$PATH\""])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let started = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed() < std::time::Duration::from_secs(5) => {
+                    std::thread::sleep(std::time::Duration::from_millis(25))
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Vec::new();
+                }
+            }
+        }
+        let mut out = String::new();
+        if let Some(mut stdout) = child.stdout.take() {
+            use std::io::Read;
+            let _ = stdout.read_to_string(&mut out);
+        }
+        // the shell may print banners around it; take what is between the markers
+        out.split("__FLIPON_PATH__")
+            .nth(1)
+            .map(|p| std::env::split_paths(p).filter(|d| d.is_absolute()).collect())
+            .unwrap_or_default()
+    })
+}
+
 /// Where tools usually live on a Mac (Homebrew, the native Claude Code installer, nvm, volta…).
 #[cfg_attr(windows, allow(dead_code))]
 fn extra_unix_dirs() -> Vec<PathBuf> {
-    let mut dirs = vec![PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")];
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    #[cfg(target_os = "macos")]
+    dirs.extend(login_shell_dirs().iter().cloned());
+    dirs.extend([PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin"), PathBuf::from("/opt/local/bin")]);
     if let Some(home) = dirs::home_dir() {
         dirs.push(home.join(".local").join("bin"));
         dirs.push(home.join(".claude").join("local"));
         dirs.push(home.join(".npm-global").join("bin"));
         dirs.push(home.join(".bun").join("bin"));
         dirs.push(home.join(".volta").join("bin"));
+        dirs.push(home.join("Library").join("pnpm"));
+        dirs.push(home.join(".local").join("share").join("pnpm"));
+        dirs.push(home.join(".asdf").join("shims"));
+        dirs.push(home.join(".local").join("share").join("mise").join("shims"));
+        dirs.push(home.join(".local").join("share").join("fnm").join("aliases").join("default").join("bin"));
+        dirs.push(home.join("Library").join("Application Support").join("fnm").join("aliases").join("default").join("bin"));
         // every node version installed with nvm, newest first
         if let Ok(read) = std::fs::read_dir(home.join(".nvm").join("versions").join("node")) {
             let mut versions: Vec<PathBuf> = read.flatten().map(|e| e.path().join("bin")).collect();

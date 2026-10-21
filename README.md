@@ -65,7 +65,7 @@ You need the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) inst
 and logged in. FlipOn finds `claude` on its own; if it cannot, set the path in
 Settings → System.
 
-**macOS** (11 or later, Apple Silicon and Intel) is supported from 0.2.0. FlipOn reads and writes
+**macOS** (13 Ventura or later, Apple Silicon and Intel) is supported from 0.2.0. FlipOn reads and writes
 Claude Code's login in the Keychain, where the CLI keeps it. The app is not notarized by Apple (that
 needs a paid developer account), so the first launch needs one extra step: open the `.dmg`, drag
 FlipOn to Applications, then System Settings → Privacy & Security → **Open Anyway**. Linux is

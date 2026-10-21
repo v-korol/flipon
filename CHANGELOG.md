@@ -8,6 +8,8 @@ shows it to users in the update notice.
 - macOS: FlipOn now needs macOS 13 Ventura or later (its interface needs a newer Safari engine
   than macOS 11 and 12 ship with). Logins are double-checked after they are saved to the Keychain,
   and `claude` is found even when it was installed with nvm, fnm, asdf, mise or pnpm.
+- macOS: background work (usage, automatic switching, update checks) no longer slows down when
+  macOS puts idle apps to sleep (App Nap).
 
 ## 0.2.1
 

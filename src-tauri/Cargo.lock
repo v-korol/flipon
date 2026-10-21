@@ -1105,6 +1105,7 @@ dependencies = [
  "chrono",
  "dirs 6.0.0",
  "font8x8",
+ "objc2-foundation",
  "parking_lot",
  "regex",
  "reqwest 0.12.28",
